@@ -512,13 +512,6 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 .saved-item .saved-actions button.danger { color: var(--danger); border-color: var(--danger); }
 .saved-empty { font-size: 13px; color: var(--text-muted); text-align: center; padding: 20px 8px; }
 .view-btn { flex: 0 0 auto; padding: 0 12px; height: 44px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--card); color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; }
-.browse-list.big { grid-template-columns: 1fr; }
-.browse-list.big .browse-card .pic { aspect-ratio: 4 / 3; }
-.browse-list.big .browse-card .nm { font-size: 18px; min-height: 0; padding: 10px 12px 2px; }
-.browse-list.big .browse-card .mt { font-size: 13px; padding: 0 12px 8px; }
-.browse-list.big .browse-card .actions { gap: 8px; padding: 0 10px 10px; }
-.browse-list.big .browse-card .actions button, .browse-list.big .browse-card .actions .qty-val-grid { height: 56px; font-size: 24px; }
-.browse-list.big .browse-card .actions .sub-btn, .browse-list.big .browse-card .actions .qty-val-grid { flex: 0 0 64px; }
 
 /* Familles : sous-filtres bâtis à partir des catégories réelles (champ c) */
 .browse-category-row { padding: 8px 12px 10px; display: flex; gap: 9px; align-items: center; }
@@ -541,22 +534,9 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 .browse-card .actions .sub-btn {flex:0 0 32px; font-size:19px;}
 .browse-card .actions .qty-val-grid {flex:0 0 25px; font-size:13px;}
 .browse-card .pic .qty-badge {top:4px; right:4px; height:25px; min-width:25px; font-size:12px; padding:0 6px;}
-/* Mode Gros : une liste horizontale compacte plutôt que de gigantesques photos */
-.browse-list.big {grid-template-columns:minmax(0,1fr); gap:8px;}
-.browse-list.big .browse-card {display:grid; grid-template-columns:100px minmax(0,1fr); grid-template-rows:auto auto auto; column-gap:10px; align-items:center; min-height:104px;}
-.browse-list.big .browse-card .pic {grid-column:1; grid-row:1 / 4; width:100px; height:104px; aspect-ratio:auto;}
-.browse-list.big .browse-card .nm {grid-column:2; grid-row:1; font-size:14px; min-height:0; padding:8px 8px 0 0; -webkit-line-clamp:2;}
-.browse-list.big .browse-card .mt {grid-column:2; grid-row:2; font-size:11px; padding:0 8px 0 0;}
-.browse-list.big .browse-card .actions {grid-column:2; grid-row:3; padding:0 8px 8px 0; gap:6px; margin:0;}
-.browse-list.big .browse-card .actions button,
-.browse-list.big .browse-card .actions .qty-val-grid {height:34px; font-size:14px;}
-.browse-list.big .browse-card .actions .sub-btn {flex:0 0 36px;}
-.browse-list.big .browse-card .actions .qty-val-grid {flex:0 0 36px;}
 @media (max-width:350px) {
   .browse-list { gap:6px; }
   .browse-card .pic {height:92px;}
-  .browse-list.big .browse-card {grid-template-columns:82px minmax(0,1fr);}
-  .browse-list.big .browse-card .pic {width:82px;height:104px;}
 }
 
 </style>
@@ -658,7 +638,6 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   <div class="sheet sheet-full" role="dialog" aria-modal="true" aria-labelledby="browseTitle">
     <div class="browse-header">
       <input type="search" id="browseSearch" class="browse-search" placeholder="Rechercher un produit…" autocomplete="off">
-      <button class="view-btn" id="browseViewBtn" aria-label="Taille d'affichage"></button>
       <button class="sheet-x" id="browseClose" aria-label="Fermer">✕</button>
     </div>
     <div class="browse-filters" id="browseFilters"></div>
@@ -1989,18 +1968,6 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 
     document.getElementById('openBrowseBtn').addEventListener('click', openBrowseSheet);
     document.getElementById('browseClose').addEventListener('click', closeBrowseSheet);
-    var VIEW_KEY = 'dynacad_browse_view_v1', bigView = true;
-    try { bigView = localStorage.getItem(VIEW_KEY) !== 'grid'; } catch (e) {}
-    function applyView() {
-      document.getElementById('browseList').classList.toggle('big', bigView);
-      document.getElementById('browseViewBtn').textContent = bigView ? '▦ 2 colonnes' : '▣ Gros';
-    }
-    applyView();
-    document.getElementById('browseViewBtn').addEventListener('click', function () {
-      bigView = !bigView;
-      try { localStorage.setItem(VIEW_KEY, bigView ? 'big' : 'grid'); } catch (e) {}
-      applyView();
-    });
     document.getElementById('browseCategory').addEventListener('change', function () {
       activeCategory = this.value;
       renderBrowseResults(document.getElementById('browseSearch').value);
