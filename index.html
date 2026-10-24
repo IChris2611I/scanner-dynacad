@@ -790,9 +790,14 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 
   async function loadThumbs() {
     try {
-      var res = await fetch('thumbs.json', { cache: 'no-cache' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      thumbs = await res.json();
+      var parts = await Promise.all(Array.from({ length: 13 }, function (_, i) {
+        var name = 'thumbs-' + String(i + 1).padStart(2, '0') + '.json';
+        return fetch(name, { cache: 'no-cache' }).then(function (res) {
+          if (!res.ok) throw new Error(name + ' HTTP ' + res.status);
+          return res.json();
+        });
+      }));
+      thumbs = Object.assign.apply(Object, [{}].concat(parts));
       thumbsReady = true;
       console.log('thumbs.json chargé : ' + Object.keys(thumbs).length + ' images');
       if (!document.getElementById('catResults').hidden) {
