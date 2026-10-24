@@ -527,6 +527,38 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 .browse-category-row select { min-width: 0; flex: 1; height: 42px; padding: 8px 10px;
   background: var(--card); color: var(--text); border: 1px solid var(--border-strong);
   border-radius: 9px; font: inherit; font-size: 13px; }
+
+/* Catalogue mobile : cartes stables et lisibles dans les deux modes */
+.browse-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; padding:2px 2px 20px; }
+.browse-card { min-width:0; background:var(--card); border-radius:12px; display:flex; flex-direction:column; overflow:hidden; }
+.browse-card .pic { flex:0 0 auto; height:112px; min-height:0; aspect-ratio:auto; background:#fff; font-size:27px; }
+.browse-card .pic img { display:block; width:100%; height:100%; object-fit:contain; padding:5px; box-sizing:border-box; }
+.browse-card .pic .missing-image { font-size:28px; opacity:.55; }
+.browse-card .nm { min-height:0; padding:7px 8px 2px; font-size:12px; line-height:1.35; overflow-wrap:anywhere; -webkit-line-clamp:2; }
+.browse-card .mt { padding:0 8px 7px; font-size:10px; min-width:0; }
+.browse-card .actions { padding:0 7px 7px; gap:5px; }
+.browse-card .actions .add-btn, .browse-card .actions .sub-btn, .browse-card .actions .qty-val-grid {height:36px; min-width:0; font-size:13px;}
+.browse-card .actions .sub-btn {flex:0 0 32px; font-size:19px;}
+.browse-card .actions .qty-val-grid {flex:0 0 25px; font-size:13px;}
+.browse-card .pic .qty-badge {top:4px; right:4px; height:25px; min-width:25px; font-size:12px; padding:0 6px;}
+/* Mode Gros : une liste horizontale compacte plutôt que de gigantesques photos */
+.browse-list.big {grid-template-columns:minmax(0,1fr); gap:8px;}
+.browse-list.big .browse-card {display:grid; grid-template-columns:100px minmax(0,1fr); grid-template-rows:auto auto auto; column-gap:10px; align-items:center; min-height:104px;}
+.browse-list.big .browse-card .pic {grid-column:1; grid-row:1 / 4; width:100px; height:104px; aspect-ratio:auto;}
+.browse-list.big .browse-card .nm {grid-column:2; grid-row:1; font-size:14px; min-height:0; padding:8px 8px 0 0; -webkit-line-clamp:2;}
+.browse-list.big .browse-card .mt {grid-column:2; grid-row:2; font-size:11px; padding:0 8px 0 0;}
+.browse-list.big .browse-card .actions {grid-column:2; grid-row:3; padding:0 8px 8px 0; gap:6px; margin:0;}
+.browse-list.big .browse-card .actions button,
+.browse-list.big .browse-card .actions .qty-val-grid {height:34px; font-size:14px;}
+.browse-list.big .browse-card .actions .sub-btn {flex:0 0 36px;}
+.browse-list.big .browse-card .actions .qty-val-grid {flex:0 0 36px;}
+@media (max-width:350px) {
+  .browse-list { gap:6px; }
+  .browse-card .pic {height:92px;}
+  .browse-list.big .browse-card {grid-template-columns:82px minmax(0,1fr);}
+  .browse-list.big .browse-card .pic {width:82px;height:104px;}
+}
+
 </style>
 </head>
 <body>
@@ -788,30 +820,51 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     }
   }
 
+  function refreshVisibleProductImages() {
+    document.querySelectorAll('.browse-card[data-ean], .cat-result[data-ean]').forEach(function (card) {
+      var ean = card.dataset.ean;
+      var pic = card.querySelector('.pic, .thumb-mini');
+      if (!pic || pic.querySelector('img')) return;
+      var src = imageFor(ean);
+      if (!src) return;
+      var placeholder = pic.querySelector('.missing-image');
+      if (placeholder) placeholder.remove();
+      var img = new Image();
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = function () {
+        img.remove();
+        if (!pic.querySelector('.missing-image')) {
+          var missing = document.createElement('span');
+          missing.className = 'missing-image';
+          missing.textContent = '📦';
+          pic.prepend(missing);
+        }
+      };
+      img.src = src;
+      pic.prepend(img);
+    });
+  }
+
   async function loadThumbs() {
-    try {
-      var parts = await Promise.all(Array.from({ length: 13 }, function (_, i) {
-        var name = 'thumbs-' + String(i + 1).padStart(2, '0') + '.json';
-        return fetch(name, { cache: 'no-cache' }).then(function (res) {
-          if (!res.ok) throw new Error(name + ' HTTP ' + res.status);
-          return res.json();
-        });
-      }));
-      thumbs = Object.assign.apply(Object, [{}].concat(parts));
-      thumbsReady = true;
-      console.log('Fichiers de vignettes chargés : ' + Object.keys(thumbs).length + ' images');
-      if (!document.getElementById('catResults').hidden) {
-        var q = document.getElementById('catQuery').value;
-        if (q) renderCatalogResults(q);
-      }
-      if (!document.getElementById('browseSheet').hidden) {
-        renderBrowseResults(document.getElementById('browseSearch').value);
-      }
-      render();
-    } catch (e) {
-      thumbsReady = false;
-      console.warn('Fichiers de vignettes non chargés :', e.message);
-    }
+    var loaded = 0;
+    thumbsReady = true;
+    var results = await Promise.allSettled(Array.from({ length: 13 }, async function (_, i) {
+      var name = 'thumbs-' + String(i + 1).padStart(2, '0') + '.json';
+      var res = await fetch(name, { cache: 'no-cache' });
+      if (!res.ok) throw new Error(name + ' HTTP ' + res.status);
+      var part = await res.json();
+      if (!part || typeof part !== 'object' || Array.isArray(part)) throw new Error(name + ' format invalide');
+      Object.assign(thumbs, part);
+      loaded++;
+      refreshVisibleProductImages();
+      return name;
+    }));
+    var failed = results.filter(function (r) { return r.status === 'rejected'; });
+    console.log('Vignettes : ' + loaded + '/13 fichiers, ' + Object.keys(thumbs).length + ' images');
+    if (failed.length) console.warn('Fichiers de vignettes non chargés :', failed.map(function (r) { return r.reason.message; }));
+    refreshVisibleProductImages();
+    render();
   }
 
   async function loadImages() {
@@ -934,6 +987,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   function makeCatalogRow(c) {
     var row = document.createElement('div');
     row.className = 'cat-result';
+    row.dataset.ean = c.e;
 
     var thumb = document.createElement('div');
     thumb.className = 'thumb-mini';
@@ -941,7 +995,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     if (src) {
       var im = new Image();
       im.alt = ''; im.loading = 'lazy';
-      im.onerror = function () { thumb.textContent = '📦'; };
+      im.onerror = function () { im.remove(); thumb.textContent = '📦'; };
       im.src = src;
       thumb.appendChild(im);
     } else {
@@ -1656,11 +1710,11 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     if (src) {
       var im = new Image();
       im.alt = ''; im.loading = 'lazy';
-      im.onerror = function () { pic.textContent = '📦'; };
+      im.onerror = function () { im.remove(); var missing = document.createElement('span'); missing.className = 'missing-image'; missing.textContent = '📦'; pic.prepend(missing); };
       im.src = src;
       pic.appendChild(im);
     } else {
-      pic.textContent = '📦';
+      var missing = document.createElement('span'); missing.className = 'missing-image'; missing.textContent = '📦'; pic.appendChild(missing);
     }
     pic.addEventListener('click', function () { addOrIncrementItem(c.e); });
 
