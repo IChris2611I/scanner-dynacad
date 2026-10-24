@@ -539,6 +539,15 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   .browse-card .pic {height:92px;}
 }
 
+
+/* Correction légère de la lisibilité des petites vignettes sources.
+   Aucun redimensionnement canvas ni génération de fichier : coût réduit sur mobile. */
+.browse-card .pic img,
+.thumb-mini img,
+.thumb img {
+  image-rendering: auto;
+  filter: contrast(1.09) saturate(1.06);
+}
 </style>
 </head>
 <body>
