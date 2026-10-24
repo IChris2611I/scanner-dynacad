@@ -1304,6 +1304,16 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     for (var i = 0; i < HD_BOUNDS.length; i++) if (ean <= HD_BOUNDS[i]) return i + 1;
     return 0;
   }
+  // If an EAN is absent from its HD file, keep the legacy thumbnail and
+  // allow Open Food Facts to fill genuine gaps (without replacing HD images).
+  function queueFallbackImage(ean) {
+    if (!ean || imageFor(ean) || browseImageQueued[ean] || hdPhotos[ean]) return;
+    var cached = names[ean] || {};
+    if (cached.imgMiss && Date.now() - cached.imgMiss < IMG_MISS_TTL) return;
+    browseImageQueued[ean] = true;
+    browseImageQueue.push(ean);
+    processBrowseImageQueue();
+  }
   function requestHD(ean) {
     var number = hdChunkForEAN(ean);
     if (!number || hdPhotos[ean] || hdUnavailable[number]) return;
@@ -1326,11 +1336,22 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
         // requests/evictions to cascade and the pictures to oscillate.
         refreshVisibleProductImages();
         hydrateVisibleBrowseCards();
+        // Cards already intersected before the HD file arrived: their
+        // IntersectionObserver ran once, so explicitly retry missing images.
+        document.querySelectorAll('.browse-card[data-ean]').forEach(function (card) {
+          var ean = card.dataset.ean;
+          if (hdChunkForEAN(ean) === number && !data[ean]) queueFallbackImage(ean);
+        });
       })
       .catch(function (err) {
         // Fichiers HD optionnels : conserver les anciennes vignettes.
         if (err.message.indexOf('404') !== -1) hdUnavailable[number] = true;
         else console.warn('HD Dynacad :', err.message);
+        if (hdUnavailable[number]) {
+          document.querySelectorAll('.browse-card[data-ean]').forEach(function (card) {
+            if (hdChunkForEAN(card.dataset.ean) === number) queueFallbackImage(card.dataset.ean);
+          });
+        }
       })
       .finally(function () { delete hdPending[number]; });
   }
@@ -1484,8 +1505,11 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
         var ean = entry.target.dataset.ean;
         requestHD(ean);
         var cached = names[ean] || {};
-        if (!ean || hdChunkForEAN(ean) || imageFor(ean) || browseImageQueued[ean] ||
+        if (!ean || imageFor(ean) || browseImageQueued[ean] ||
             (cached.imgMiss && Date.now() - cached.imgMiss < IMG_MISS_TTL)) return;
+        var chunk = hdChunkForEAN(ean);
+        // Wait for the relevant HD file before trying a remote fallback.
+        if (chunk && !hdChunks.has(chunk) && !hdUnavailable[chunk]) return;
         browseImageQueued[ean] = true;
         browseImageQueue.push(ean);
       });
