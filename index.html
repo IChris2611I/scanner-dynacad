@@ -1297,6 +1297,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   var hdPhotos = {};
   var hdChunks = new Map();
   var hdPending = {};
+  var hdUnavailable = {};
   var HD_BOUNDS = ["3049580530160","3176582033334","3245413200198","3270192679033","3381571000239","3560070302192","3560071010973","3560071439323","3600542525879","3665468200569","4255582817867","8005110170300","9120097312815"];
   var HD_CACHE_LIMIT = 3;
   function hdChunkForEAN(ean) {
@@ -1306,8 +1307,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   }
   function requestHD(ean) {
     var number = hdChunkForEAN(ean);
-    if (!number || hdPhotos[ean]) return;
-    if (hdChunks.has(number)) return;
+    if (!number || hdPhotos[ean] || hdUnavailable[number]) return;
+    if (hdChunks.has(number)) { var part = hdChunks.get(number); hdChunks.delete(number); hdChunks.set(number, part); return; }
     if (hdPending[number]) return;
     var filename = 'images-hd-' + String(number).padStart(2, '0') + '.json';
     hdPending[number] = fetch(filename)
@@ -1327,7 +1328,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       })
       .catch(function (err) {
         // Fichiers HD optionnels : conserver les anciennes vignettes.
-        if (err.message.indexOf('404') === -1) console.warn('HD Dynacad :', err.message);
+        if (err.message.indexOf('404') !== -1) hdUnavailable[number] = true;
+        else console.warn('HD Dynacad :', err.message);
       })
       .finally(function () { delete hdPending[number]; });
   }
