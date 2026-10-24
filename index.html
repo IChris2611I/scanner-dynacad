@@ -1248,14 +1248,14 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     if (!document.getElementById('browseSheet').hidden) refreshBrowseCard(ean);
   }
 
-  function restoreItems(snap) { items = snap; saveItems(); render(); }
+  function restoreItems(snap) { items = snap; saveItems(); render(); if (!document.getElementById('browseSheet').hidden) renderBrowseResults(document.getElementById('browseSearch').value); }
   function removeItem(ean) {
-    var snap = items.map(function (it) { return { ean: it.ean, qty: it.qty }; });
+    var snap = items.map(function (it) { return { ean: it.ean, qty: it.qty }; }), prevExp = exported;
     items = items.filter(function (it) { return it.ean !== ean; });
     exported = null; saveExported();
     saveItems(); render();
     if (!document.getElementById('browseSheet').hidden) refreshBrowseCard(ean);
-    showToast('Article supprimé', 'Annuler', function () { restoreItems(snap); });
+    showToast('Article supprimé', 'Annuler', function () { exported = prevExp; saveExported(); restoreItems(snap); });
   }
   function clearAll() {
     if (items.length === 0) return;
@@ -1846,14 +1846,14 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 
   function applySavedList(sl, mode) {
     if (mode === 'replace') {
-      items = sl.items.map(function (it) { return { ean: it.ean, qty: it.qty }; });
+      items = sl.items.map(function (it) { return { ean: it.ean, qty: Math.max(1, Math.min(9999, it.qty)) }; });
       exported = null;
       saveExported();
     } else {
       sl.items.forEach(function (it) {
         var cur = items.find(function (x) { return x.ean === it.ean; });
-        if (cur) cur.qty += it.qty;
-        else items.push({ ean: it.ean, qty: it.qty });
+        if (cur) cur.qty = Math.min(9999, cur.qty + it.qty);
+        else items.push({ ean: it.ean, qty: Math.max(1, Math.min(9999, it.qty)) });
       });
     }
     exported = null; saveExported();
