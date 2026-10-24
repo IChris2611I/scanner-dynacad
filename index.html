@@ -799,7 +799,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       }));
       thumbs = Object.assign.apply(Object, [{}].concat(parts));
       thumbsReady = true;
-      console.log('thumbs.json chargé : ' + Object.keys(thumbs).length + ' images');
+      console.log('Fichiers de vignettes chargés : ' + Object.keys(thumbs).length + ' images');
       if (!document.getElementById('catResults').hidden) {
         var q = document.getElementById('catQuery').value;
         if (q) renderCatalogResults(q);
@@ -810,7 +810,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       render();
     } catch (e) {
       thumbsReady = false;
-      console.warn('thumbs.json non chargé :', e.message);
+      console.warn('Fichiers de vignettes non chargés :', e.message);
     }
   }
 
@@ -1223,12 +1223,12 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       if (!fromScan) feedback(false);
       return;
     }
-    if (items.length === 0 && exported) { exported = null; saveExported(); }
+    if (exported) { exported = null; saveExported(); }
     var idx = items.findIndex(function (it) { return it.ean === ean; });
     var it;
     if (idx !== -1) {
       it = items.splice(idx, 1)[0];
-      it.qty += 1;
+      it.qty = Math.min(9999, it.qty + 1);
     } else {
       it = { ean: ean, qty: 1 };
     }
@@ -1248,13 +1248,14 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     if (!document.getElementById('browseSheet').hidden) refreshBrowseCard(ean);
   }
 
-  function restoreItems(snap) { items = snap; saveItems(); render(); }
+  function restoreItems(snap) { items = snap; saveItems(); render(); if (!document.getElementById('browseSheet').hidden) renderBrowseResults(document.getElementById('browseSearch').value); }
   function removeItem(ean) {
-    var snap = items.slice();
+    var snap = items.map(function (it) { return { ean: it.ean, qty: it.qty }; }), prevExp = exported;
     items = items.filter(function (it) { return it.ean !== ean; });
+    exported = null; saveExported();
     saveItems(); render();
     if (!document.getElementById('browseSheet').hidden) refreshBrowseCard(ean);
-    showToast('Article supprimé', 'Annuler', function () { restoreItems(snap); });
+    showToast('Article supprimé', 'Annuler', function () { exported = prevExp; saveExported(); restoreItems(snap); });
   }
   function clearAll() {
     if (items.length === 0) return;
@@ -1271,13 +1272,15 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     if (!it) return;
     var n = parseInt(val, 10);
     it.qty = isNaN(n) || n < 1 ? 1 : Math.min(n, 9999);
+    exported = null; saveExported();
     saveItems(); render();
     if (!document.getElementById('browseSheet').hidden) refreshBrowseCard(ean);
   }
   function changeQty(ean, delta) {
     var it = items.find(function (i) { return i.ean === ean; });
     if (!it) return;
-    it.qty = Math.max(1, it.qty + delta);
+    it.qty = Math.max(1, Math.min(9999, it.qty + delta));
+    exported = null; saveExported();
     saveItems(); render();
     if (!document.getElementById('browseSheet').hidden) refreshBrowseCard(ean);
   }
@@ -1843,16 +1846,17 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 
   function applySavedList(sl, mode) {
     if (mode === 'replace') {
-      items = sl.items.map(function (it) { return { ean: it.ean, qty: it.qty }; });
+      items = sl.items.map(function (it) { return { ean: it.ean, qty: Math.max(1, Math.min(9999, it.qty)) }; });
       exported = null;
       saveExported();
     } else {
       sl.items.forEach(function (it) {
         var cur = items.find(function (x) { return x.ean === it.ean; });
-        if (cur) cur.qty += it.qty;
-        else items.push({ ean: it.ean, qty: it.qty });
+        if (cur) cur.qty = Math.min(9999, cur.qty + it.qty);
+        else items.push({ ean: it.ean, qty: Math.max(1, Math.min(9999, it.qty)) });
       });
     }
+    exported = null; saveExported();
     saveItems();
     render();
     if (!document.getElementById('browseSheet').hidden) {
@@ -2017,44 +2021,9 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     } catch (e) {}
 
     if ('serviceWorker' in navigator) {
-      try {
-        var swCode = [
-          "var CACHE = 'dynacad-v3';",
-          "var PRECACHE = ['./', './catalog.json', './thumbs.json', './images.json'];",
-          "self.addEventListener('install', function(e){",
-          "  e.waitUntil(caches.open(CACHE).then(function(c){",
-          "    return Promise.all(PRECACHE.map(function(u){",
-          "      return c.add(u).catch(function(){});",
-          "    }));",
-          "  }));",
-          "  self.skipWaiting();",
-          "});",
-          "self.addEventListener('activate', function(e){",
-          "  e.waitUntil(caches.keys().then(function(ks){",
-          "    return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));",
-          "  }).then(function(){ return self.clients.claim(); }));",
-          "});",
-          "self.addEventListener('fetch', function(e){",
-          "  var req = e.request;",
-          "  if (req.method !== 'GET') return;",
-          "  e.respondWith(",
-          "    caches.match(req).then(function(hit){",
-          "      if (hit) return hit;",
-          "      return fetch(req).then(function(res){",
-          "        if (res && res.status === 200 && (req.url.indexOf('catalog.json') !== -1 || req.url.indexOf('thumbs.json') !== -1 || req.url.indexOf('images.json') !== -1 || req.url.indexOf(location.origin) === 0)) {",
-          "          var copy = res.clone();",
-          "          caches.open(CACHE).then(function(c){ c.put(req, copy); });",
-          "        }",
-          "        return res;",
-          "      }).catch(function(){ return caches.match('./'); });",
-          "    })",
-          "  );",
-          "});"
-        ].join('\n');
-        var swBlob = new Blob([swCode], { type: 'application/javascript' });
-        var swUrl = URL.createObjectURL(swBlob);
-        navigator.serviceWorker.register(swUrl).catch(function () {});
-      } catch (e) {}
+      navigator.serviceWorker.register('./sw.js').catch(function (err) {
+        console.warn('Service Worker indisponible :', err);
+      });
     }
   }
 
