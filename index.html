@@ -958,12 +958,14 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       Object.assign(thumbs, part);
       loaded++;
       refreshVisibleProductImages();
+      hydrateVisibleBrowseCards();
       return name;
     }));
     var failed = results.filter(function (r) { return r.status === 'rejected'; });
     console.log('Vignettes : ' + loaded + '/13 fichiers, ' + Object.keys(thumbs).length + ' images');
     if (failed.length) console.warn('Fichiers de vignettes non chargés :', failed.map(function (r) { return r.reason.message; }));
     refreshVisibleProductImages();
+    hydrateVisibleBrowseCards();
     render();
   }
 
@@ -1375,10 +1377,43 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     }
   }
 
+  // Actualise uniquement les cartes réellement visibles, sans attendre un clic.
+  function hydrateVisibleBrowseCards() {
+    var root = document.getElementById('browseList');
+    if (!root || document.getElementById('browseSheet').hidden) return;
+    var area = root.getBoundingClientRect();
+    root.querySelectorAll('.browse-card[data-ean]').forEach(function (card) {
+      var rect = card.getBoundingClientRect();
+      if (rect.bottom < area.top - 180 || rect.top > area.bottom + 180) return;
+      var ean = card.dataset.ean;
+      var src = imageFor(ean);
+      if (!src) return;
+      var pic = card.querySelector('.pic');
+      if (!pic) return;
+      var im = pic.querySelector('img');
+      if (!im) {
+        im = new Image();
+        im.alt = '';
+        im.loading = 'eager';
+        im.decoding = 'async';
+        var missing = pic.querySelector('.missing-image');
+        if (missing) missing.remove();
+        pic.prepend(im);
+      }
+      // Les anciennes vignettes avaient loading=lazy ; sur certaines WebViews
+      // l'image ne démarrait qu'après un clic.
+      im.loading = 'eager';
+      if (!im.dataset.claritySource && im.getAttribute('src') !== src) im.src = src;
+      if (clarityObserver) clarityObserver.observe(card);
+    });
+  }
+
   function observeBrowseImage(card) {
     if (!card || !card.dataset.ean) return;
     if (browseImageObserver) browseImageObserver.observe(card);
     if (clarityObserver) clarityObserver.observe(card);
+    // Repli fiable si les observers ne se déclenchent pas immédiatement.
+    hydrateVisibleBrowseCards();
   }
 
   function initBrowseImageObserver() {
@@ -1889,6 +1924,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     activeCategory = '';
     renderBrowseFilters();
     renderBrowseResults('');
+    // Déclenche le chargement sans clic dès que la feuille est visible.
+    requestAnimationFrame(function () { refreshVisibleProductImages(); hydrateVisibleBrowseCards(); });
     setTimeout(function () { document.getElementById('browseSearch').focus(); }, 100);
   }
   function closeBrowseSheet() {
@@ -1995,6 +2032,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       return;
     }
     appendBrowsePage();
+    requestAnimationFrame(hydrateVisibleBrowseCards);
   }
 
   function appendBrowsePage() {
@@ -2007,6 +2045,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       observeBrowseImage(card);
     }
     browseShown = end;
+    requestAnimationFrame(hydrateVisibleBrowseCards);
   }
 
   function makeBrowseCard(c) {
@@ -2019,7 +2058,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     var src = bigImageFor(c.e);
     if (src) {
       var im = new Image();
-      im.alt = ''; im.loading = 'lazy';
+      im.alt = ''; im.loading = 'eager';
+      im.decoding = 'async';
       im.onerror = function () { im.remove(); var missing = document.createElement('span'); missing.className = 'missing-image'; missing.textContent = '📦'; pic.prepend(missing); };
       im.src = src;
       pic.appendChild(im);
