@@ -1240,7 +1240,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     var ean = card.dataset.ean;
     var src = ean && imageFor(ean);
     // On évite les images externes : pas de cross-origin canvas ni de traitement inutile.
-    if (!src || !src.startsWith('data:image/') || hdPhotos[ean]) return;
+    if (!src || !src.startsWith('data:image/') || hdPhotos[ean] || card.querySelector('.pic img[data-hd-locked="1"]')) return;
     card.dataset.clarityQueued = '1';
     clarityQueue.push({ card: card, ean: ean, src: src });
     runClarityQueue();
@@ -1260,7 +1260,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       job.then(function (result) {
         if (work.card.isConnected && imageFor(work.ean) === work.src) {
           var img = work.card.querySelector('.pic img');
-          if (img && img.dataset.claritySource !== work.src) {
+          if (img && !img.dataset.hdLocked && !hdPhotos[work.ean] && img.dataset.claritySource !== work.src) {
             img.dataset.claritySource = work.src;
             img.src = result;
           }
@@ -1369,17 +1369,21 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       var src = imageFor(ean);
       if (!src) return;
       var previous = pic.querySelector('img');
-      if (previous && previous.src === src) return;
+      if (previous && (previous.dataset.hdLocked || previous.src === src)) return;
       var im = new Image();
       im.alt = '';
       im.loading = 'lazy';
       im.onload = function () {
         var old = pic.querySelector('img');
+        // An older Open Food Facts request can finish after HD was shown.
+        if (old && old.dataset.hdLocked) return;
+        if (hdPhotos[ean] && src !== hdPhotos[ean]) return;
         if (old) old.remove();
         var missing = pic.querySelector('.missing-image');
         if (missing) missing.remove();
         pic.prepend(im);
       };
+      if (hdPhotos[ean]) im.dataset.hdLocked = '1';
       im.src = src;
     });
   }
@@ -1480,7 +1484,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
         var ean = entry.target.dataset.ean;
         requestHD(ean);
         var cached = names[ean] || {};
-        if (!ean || imageFor(ean) || browseImageQueued[ean] ||
+        if (!ean || hdChunkForEAN(ean) || imageFor(ean) || browseImageQueued[ean] ||
             (cached.imgMiss && Date.now() - cached.imgMiss < IMG_MISS_TTL)) return;
         browseImageQueued[ean] = true;
         browseImageQueue.push(ean);
