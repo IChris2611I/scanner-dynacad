@@ -758,7 +758,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 <div class="sheet-bg full" id="browseSheet" hidden>
   <div class="sheet sheet-full" role="dialog" aria-modal="true" aria-labelledby="browseTitle">
     <div class="browse-header">
-      <input type="search" id="browseSearch" class="browse-search" placeholder="Rechercher un produit…" autocomplete="off">
+      <input type="search" id="browseSearch" class="browse-search" placeholder="Nom, marque ou code EAN…" autocomplete="off">
       <button class="sheet-x" id="browseClose" aria-label="Fermer">✕</button>
     </div>
     <div class="browse-filters" id="browseFilters"></div>
@@ -1030,7 +1030,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   function searchCatalog(query, rayon, limit, category) {
     var q = norm(query).trim();
     if (q.length < 2) return [];
-    var terms = q.split(/\s+/).filter(Boolean).map(termRe);
+    var searchWords = q.split(/\s+/).filter(Boolean);
+    var terms = searchWords.map(termRe);
     var out = [];
     for (var i = 0; i < catalog.length; i++) {
       var it = catalog[i];
@@ -1038,7 +1039,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       if (category && it.c !== category) continue;
       var h = it._h, score = 0, ok = true;
       for (var j = 0; j < terms.length; j++) {
-        if (terms[j].word.test(h)) score += 3;
+        if (/^\d+$/.test(searchWords[j]) && String(it.e || '').includes(searchWords[j])) score += 6;
+        else if (terms[j].word.test(h)) score += 3;
         else if (terms[j].prefix && terms[j].prefix.test(h)) score += 1;
         else { ok = false; break; }
       }
