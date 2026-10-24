@@ -923,9 +923,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       var ean = card.dataset.ean;
       var pic = card.querySelector('.pic, .thumb-mini');
       if (!pic) return;
-      if (card.classList.contains('browse-card')) requestHD(ean);
       var existingImg = pic.querySelector('img');
-      if (existingImg) { if (hdPhotos[ean] && existingImg.getAttribute('src') !== hdPhotos[ean]) { existingImg.dataset.claritySource = ''; existingImg.src = hdPhotos[ean]; } return; }
+      if (existingImg) { if (hdPhotos[ean] && existingImg.getAttribute('src') !== hdPhotos[ean]) { existingImg.dataset.claritySource = ''; existingImg.dataset.hdLocked = '1'; existingImg.src = hdPhotos[ean]; } return; }
       var src = imageFor(ean);
       if (!src) return;
       var placeholder = pic.querySelector('.missing-image');
@@ -1323,6 +1322,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
           hdChunks.delete(oldest);
           Object.keys(removed).forEach(function (key) { delete hdPhotos[key]; });
         }
+        // Rendering must not trigger new HD chunk requests: this caused
+        // requests/evictions to cascade and the pictures to oscillate.
         refreshVisibleProductImages();
         hydrateVisibleBrowseCards();
       })
@@ -1434,7 +1435,6 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       var rect = card.getBoundingClientRect();
       if (rect.bottom < area.top - 180 || rect.top > area.bottom + 180) return;
       var ean = card.dataset.ean;
-      requestHD(ean);
       var src = imageFor(ean);
       if (!src) return;
       var pic = card.querySelector('.pic');
@@ -1452,9 +1452,15 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       // Les anciennes vignettes avaient loading=lazy ; sur certaines WebViews
       // l'image ne démarrait qu'après un clic.
       im.loading = 'eager';
-      if (hdPhotos[ean]) im.dataset.claritySource = '';
-      if ((!im.dataset.claritySource || hdPhotos[ean]) && im.getAttribute('src') !== src) im.src = src;
-      if (clarityObserver) clarityObserver.observe(card);
+      if (hdPhotos[ean]) {
+        im.dataset.claritySource = '';
+        im.dataset.hdLocked = '1';
+      }
+      // Never replace an already loaded HD image with a thumbnail when the
+      // 3-chunk memory cache evicts its source.
+      if (!im.dataset.hdLocked && !im.dataset.claritySource && im.getAttribute('src') !== src) im.src = src;
+      else if (hdPhotos[ean] && im.getAttribute('src') !== src) im.src = src;
+      if (clarityObserver && !im.dataset.hdLocked) clarityObserver.observe(card);
     });
   }
 
