@@ -159,6 +159,17 @@ h1 { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
 .torch-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .list-tools { display: flex; align-items: center; gap: 6px; }
 .link-btn { background: none; border: none; color: var(--text-muted); font-size: 13px; cursor: pointer; padding: 4px 6px; }
+/* Action destructive clairement identifiable, dans les deux thèmes. */
+#clearBtn {
+  color: var(--danger);
+  font-weight: 750;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+#clearBtn:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
+#clearBtn:active { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
 input.qty-val {
   width: 44px; border: 1px solid transparent; border-radius: 8px;
   background: transparent; color: var(--text); font: inherit; font-weight: 600; padding: 4px 0;
@@ -701,7 +712,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       <div class="list-tools">
         <span class="count-badge" id="countBadge">0</span>
         <button class="link-btn" id="openSavedBtn">💾 Listes</button>
-        <button class="link-btn" id="clearBtn">Vider</button>
+        <button class="link-btn" id="clearBtn" aria-label="Vider la commande">Vider</button>
       </div>
     </div>
     <div id="itemList">
