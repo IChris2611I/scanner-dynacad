@@ -1412,8 +1412,6 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     if (!card || !card.dataset.ean) return;
     if (browseImageObserver) browseImageObserver.observe(card);
     if (clarityObserver) clarityObserver.observe(card);
-    // Repli fiable si les observers ne se déclenchent pas immédiatement.
-    hydrateVisibleBrowseCards();
   }
 
   function initBrowseImageObserver() {
