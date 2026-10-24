@@ -1304,10 +1304,70 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     for (var i = 0; i < HD_BOUNDS.length; i++) if (ean <= HD_BOUNDS[i]) return i + 1;
     return 0;
   }
+
+  // Complément LIQUIDES : 2 386 nouveaux EAN absents des 13 lots initiaux.
+  // Chargé uniquement si le lot HD initial ne contient pas ce produit.
+  var LIQ_BOUNDS = ["3168930170570","3245415857369","3453521220681","3560071532345","5010677801553","9417574000083"];
+  var liqChunks = new Map();
+  var liqPending = {};
+  var liqUnavailable = {};
+  var LIQ_CACHE_LIMIT = 3;
+  function liqChunkForEAN(ean) {
+    ean = String(ean || '');
+    for (var i = 0; i < LIQ_BOUNDS.length; i++) if (ean <= LIQ_BOUNDS[i]) return i + 1;
+    return 0;
+  }
+  function requestLiquidesHD(ean) {
+    if (!ean || hdPhotos[ean]) return;
+    var number = liqChunkForEAN(ean);
+    if (!number || liqUnavailable[number] || liqPending[number]) return;
+    if (liqChunks.has(number)) {
+      var part = liqChunks.get(number);
+      liqChunks.delete(number);
+      liqChunks.set(number, part);
+      return;
+    }
+    var filename = 'images-liquides-hd-' + String(number).padStart(2, '0') + '.json';
+    liqPending[number] = fetch(filename)
+      .then(function (r) { if (!r.ok) throw new Error(filename + ' HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        liqChunks.set(number, data);
+        Object.assign(hdPhotos, data);
+        while (liqChunks.size > LIQ_CACHE_LIMIT) {
+          var oldest = liqChunks.keys().next().value;
+          var removed = liqChunks.get(oldest);
+          liqChunks.delete(oldest);
+          Object.keys(removed).forEach(function (key) {
+            if (!hdChunks.has(hdChunkForEAN(key))) delete hdPhotos[key];
+          });
+        }
+        refreshVisibleProductImages();
+        hydrateVisibleBrowseCards();
+        document.querySelectorAll('.browse-card[data-ean]').forEach(function (card) {
+          var code = card.dataset.ean;
+          if (liqChunkForEAN(code) === number && !imageFor(code)) queueFallbackImage(code);
+        });
+      })
+      .catch(function (err) {
+        if (err.message.indexOf('404') === -1) console.warn('HD Liquides :', err.message);
+        liqUnavailable[number] = true;
+        document.querySelectorAll('.browse-card[data-ean]').forEach(function (card) {
+          var code = card.dataset.ean;
+          if (liqChunkForEAN(code) === number && !imageFor(code)) queueFallbackImage(code);
+        });
+      })
+      .finally(function () { delete liqPending[number]; });
+  }
+
   // If an EAN is absent from its HD file, keep the legacy thumbnail and
   // allow Open Food Facts to fill genuine gaps (without replacing HD images).
   function queueFallbackImage(ean) {
     if (!ean || imageFor(ean) || browseImageQueued[ean] || hdPhotos[ean]) return;
+    var liq = liqChunkForEAN(ean);
+    if (liq && !liqChunks.has(liq) && !liqUnavailable[liq]) {
+      requestLiquidesHD(ean);
+      return;
+    }
     var cached = names[ean] || {};
     if (cached.imgMiss && Date.now() - cached.imgMiss < IMG_MISS_TTL) return;
     browseImageQueued[ean] = true;
@@ -1316,6 +1376,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   }
   function requestHD(ean) {
     var number = hdChunkForEAN(ean);
+    if (!number) { requestLiquidesHD(ean); return; }
+    if (hdChunks.has(number) && !hdPhotos[ean]) requestLiquidesHD(ean);
     if (!number || hdPhotos[ean] || hdUnavailable[number]) return;
     if (hdChunks.has(number)) { var part = hdChunks.get(number); hdChunks.delete(number); hdChunks.set(number, part); return; }
     if (hdPending[number]) return;
@@ -1340,7 +1402,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
         // IntersectionObserver ran once, so explicitly retry missing images.
         document.querySelectorAll('.browse-card[data-ean]').forEach(function (card) {
           var ean = card.dataset.ean;
-          if (hdChunkForEAN(ean) === number && !data[ean]) queueFallbackImage(ean);
+          if (hdChunkForEAN(ean) === number && !data[ean]) requestLiquidesHD(ean);
         });
       })
       .catch(function (err) {
@@ -1349,7 +1411,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
         else console.warn('HD Dynacad :', err.message);
         if (hdUnavailable[number]) {
           document.querySelectorAll('.browse-card[data-ean]').forEach(function (card) {
-            if (hdChunkForEAN(card.dataset.ean) === number) queueFallbackImage(card.dataset.ean);
+            if (hdChunkForEAN(card.dataset.ean) === number) requestLiquidesHD(card.dataset.ean);
           });
         }
       })
@@ -1510,6 +1572,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
         var chunk = hdChunkForEAN(ean);
         // Wait for the relevant HD file before trying a remote fallback.
         if (chunk && !hdChunks.has(chunk) && !hdUnavailable[chunk]) return;
+        var liq = liqChunkForEAN(ean);
+        if (liq && !liqChunks.has(liq) && !liqUnavailable[liq]) { requestLiquidesHD(ean); return; }
         browseImageQueued[ean] = true;
         browseImageQueue.push(ean);
       });
