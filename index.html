@@ -1079,6 +1079,100 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     return '';
   }
 
+  // Recherche d'images Open Food Facts uniquement pour les cartes visibles,
+  // avec cache négatif et limite de concurrence pour ne pas ralentir le catalogue.
+  var browseImageObserver = null;
+  var browseImageQueue = [];
+  var browseImageQueued = {};
+  var browseImageActive = 0;
+  var BROWSE_IMAGE_CONCURRENCY = 2;
+
+  function updateBrowseImage(ean) {
+    document.querySelectorAll('.browse-card[data-ean="' + ean + '"]').forEach(function (card) {
+      var pic = card.querySelector('.pic');
+      if (!pic) return;
+      var src = imageFor(ean);
+      if (!src) return;
+      var previous = pic.querySelector('img');
+      if (previous && previous.src === src) return;
+      var im = new Image();
+      im.alt = '';
+      im.loading = 'lazy';
+      im.onload = function () {
+        var old = pic.querySelector('img');
+        if (old) old.remove();
+        var missing = pic.querySelector('.missing-image');
+        if (missing) missing.remove();
+        pic.prepend(im);
+      };
+      im.src = src;
+    });
+  }
+
+  async function fetchBrowseImage(ean) {
+    var cached = names[ean] || {};
+    if (imageFor(ean) || (cached.imgMiss && Date.now() - cached.imgMiss < IMG_MISS_TTL)) return;
+    try {
+      var url = 'https://world.openfoodfacts.org/api/v2/product/' + encodeURIComponent(ean) +
+        '?fields=image_front_small_url,image_front_thumb_url,image_front_url';
+      var ctl = new AbortController();
+      var timer = setTimeout(function () { ctl.abort(); }, 6500);
+      try {
+        var res = await fetch(url, { signal: ctl.signal });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var result = await res.json();
+        var product = result && result.status === 1 ? result.product : null;
+        var img = product && String(product.image_front_small_url || product.image_front_url || product.image_front_thumb_url || '');
+        if (img && OKIMG.test(img)) {
+          names[ean] = Object.assign({}, names[ean] || {}, { img: img, imgMiss: 0 });
+          saveNames();
+          updateBrowseImage(ean);
+        } else {
+          names[ean] = Object.assign({}, names[ean] || {}, { imgMiss: Date.now() });
+          saveNames();
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (e) {
+      // Erreur réseau temporaire : ne pas enregistrer une absence définitive.
+      console.debug('Image Open Food Facts indisponible pour', ean, e.message);
+    }
+  }
+
+  function processBrowseImageQueue() {
+    while (browseImageActive < BROWSE_IMAGE_CONCURRENCY && browseImageQueue.length) {
+      var ean = browseImageQueue.shift();
+      browseImageActive++;
+      fetchBrowseImage(ean).finally(function () {
+        browseImageActive--;
+        processBrowseImageQueue();
+      });
+    }
+  }
+
+  function observeBrowseImage(card) {
+    if (!browseImageObserver || !card || !card.dataset.ean) return;
+    browseImageObserver.observe(card);
+  }
+
+  function initBrowseImageObserver() {
+    if (!('IntersectionObserver' in window)) return;
+    browseImageObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        browseImageObserver.unobserve(entry.target);
+        var ean = entry.target.dataset.ean;
+        var cached = names[ean] || {};
+        if (!ean || imageFor(ean) || browseImageQueued[ean] ||
+            (cached.imgMiss && Date.now() - cached.imgMiss < IMG_MISS_TTL)) return;
+        browseImageQueued[ean] = true;
+        browseImageQueue.push(ean);
+      });
+      processBrowseImageQueue();
+    }, { root: document.getElementById('browseList'), rootMargin: '160px' });
+  }
+
   function needsLookup(ean) {
     var n = names[ean];
     if (pending[ean]) return false;
@@ -1653,6 +1747,9 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
 
     browseResults = source;
     browseShown = 0;
+    if (browseImageObserver) browseImageObserver.disconnect();
+    browseImageQueue.length = 0;
+    browseImageQueued = {};
     list.innerHTML = '';
     countEl.textContent = source.length.toLocaleString('fr-FR') + ' produit' + (source.length > 1 ? 's' : '');
 
@@ -1674,6 +1771,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       var card = makeBrowseCard(browseResults[i]);
       card.dataset.ean = browseResults[i].e;
       list.appendChild(card);
+      observeBrowseImage(card);
     }
     browseShown = end;
   }
@@ -1778,6 +1876,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     var newCard = makeBrowseCard(cat);
     newCard.dataset.ean = ean;
     card.replaceWith(newCard);
+    observeBrowseImage(newCard);
   }
 
   // ---------- Sheet listes sauvegardées ----------
@@ -1924,6 +2023,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     loadNames();
     loadExported();
     loadSavedLists();
+    initBrowseImageObserver();
     render();
     loadCatalog();
     loadThumbs();
