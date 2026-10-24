@@ -922,7 +922,10 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     document.querySelectorAll('.browse-card[data-ean], .cat-result[data-ean]').forEach(function (card) {
       var ean = card.dataset.ean;
       var pic = card.querySelector('.pic, .thumb-mini');
-      if (!pic || pic.querySelector('img')) return;
+      if (!pic) return;
+      if (card.classList.contains('browse-card')) requestHD(ean);
+      var existingImg = pic.querySelector('img');
+      if (existingImg) { if (hdPhotos[ean] && existingImg.getAttribute('src') !== hdPhotos[ean]) { existingImg.dataset.claritySource = ''; existingImg.src = hdPhotos[ean]; } return; }
       var src = imageFor(ean);
       if (!src) return;
       var placeholder = pic.querySelector('.missing-image');
@@ -1238,7 +1241,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     var ean = card.dataset.ean;
     var src = ean && imageFor(ean);
     // On évite les images externes : pas de cross-origin canvas ni de traitement inutile.
-    if (!src || !src.startsWith('data:image/')) return;
+    if (!src || !src.startsWith('data:image/') || hdPhotos[ean]) return;
     card.dataset.clarityQueued = '1';
     clarityQueue.push({ card: card, ean: ean, src: src });
     runClarityQueue();
@@ -1288,9 +1291,53 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     }, { root: document.getElementById('browseList'), rootMargin: '60px' });
   }
 
+
+  // Photos HD WebP : 13 lots rangés par EAN (750 images/lot).
+  // Les petites vignettes restent affichées immédiatement comme secours.
+  var hdPhotos = {};
+  var hdChunks = new Map();
+  var hdPending = {};
+  var hdUnavailable = {};
+  var HD_BOUNDS = ["3049580530160","3176582033334","3245413200198","3270192679033","3381571000239","3560070302192","3560071010973","3560071439323","3600542525879","3665468200569","4255582817867","8005110170300","9120097312815"];
+  var HD_CACHE_LIMIT = 3;
+  function hdChunkForEAN(ean) {
+    ean = String(ean || '');
+    for (var i = 0; i < HD_BOUNDS.length; i++) if (ean <= HD_BOUNDS[i]) return i + 1;
+    return 0;
+  }
+  function requestHD(ean) {
+    var number = hdChunkForEAN(ean);
+    if (!number || hdPhotos[ean] || hdUnavailable[number]) return;
+    if (hdChunks.has(number)) { var part = hdChunks.get(number); hdChunks.delete(number); hdChunks.set(number, part); return; }
+    if (hdPending[number]) return;
+    var filename = 'images-hd-' + String(number).padStart(2, '0') + '.json';
+    hdPending[number] = fetch(filename)
+      .then(function (r) { if (!r.ok) throw new Error(filename + ' HTTP ' + r.status); return r.json(); })
+      .then(function (data) {
+        hdChunks.set(number, data);
+        Object.assign(hdPhotos, data);
+        // LRU borné pour limiter la RAM des téléphones.
+        while (hdChunks.size > HD_CACHE_LIMIT) {
+          var oldest = hdChunks.keys().next().value;
+          var removed = hdChunks.get(oldest);
+          hdChunks.delete(oldest);
+          Object.keys(removed).forEach(function (key) { delete hdPhotos[key]; });
+        }
+        refreshVisibleProductImages();
+        hydrateVisibleBrowseCards();
+      })
+      .catch(function (err) {
+        // Fichiers HD optionnels : conserver les anciennes vignettes.
+        if (err.message.indexOf('404') !== -1) hdUnavailable[number] = true;
+        else console.warn('HD Dynacad :', err.message);
+      })
+      .finally(function () { delete hdPending[number]; });
+  }
+
   function imageFor(ean) {
     var n = names[ean];
     if (n && n.photo) return n.photo;
+    if (hdPhotos[ean]) return hdPhotos[ean];
     if (imagesReady && images[ean]) return images[ean];
     if (thumbsReady && thumbs[ean]) return thumbs[ean];
     if (n && n.img) return n.img;
@@ -1299,6 +1346,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   function bigImageFor(ean) {
     var n = names[ean];
     if (n && n.photo) return n.photo;
+    if (hdPhotos[ean]) return hdPhotos[ean];
     if (imagesReady && images[ean]) return images[ean];
     if (thumbsReady && thumbs[ean]) return thumbs[ean];
     if (n && n.img) return n.img;
@@ -1386,6 +1434,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       var rect = card.getBoundingClientRect();
       if (rect.bottom < area.top - 180 || rect.top > area.bottom + 180) return;
       var ean = card.dataset.ean;
+      requestHD(ean);
       var src = imageFor(ean);
       if (!src) return;
       var pic = card.querySelector('.pic');
@@ -1403,7 +1452,8 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       // Les anciennes vignettes avaient loading=lazy ; sur certaines WebViews
       // l'image ne démarrait qu'après un clic.
       im.loading = 'eager';
-      if (!im.dataset.claritySource && im.getAttribute('src') !== src) im.src = src;
+      if (hdPhotos[ean]) im.dataset.claritySource = '';
+      if ((!im.dataset.claritySource || hdPhotos[ean]) && im.getAttribute('src') !== src) im.src = src;
       if (clarityObserver) clarityObserver.observe(card);
     });
   }
@@ -1412,6 +1462,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     if (!card || !card.dataset.ean) return;
     if (browseImageObserver) browseImageObserver.observe(card);
     if (clarityObserver) clarityObserver.observe(card);
+    if (!('IntersectionObserver' in window)) requestHD(card.dataset.ean);
   }
 
   function initBrowseImageObserver() {
@@ -1421,6 +1472,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
         if (!entry.isIntersecting) return;
         browseImageObserver.unobserve(entry.target);
         var ean = entry.target.dataset.ean;
+        requestHD(ean);
         var cached = names[ean] || {};
         if (!ean || imageFor(ean) || browseImageQueued[ean] ||
             (cached.imgMiss && Date.now() - cached.imgMiss < IMG_MISS_TTL)) return;
