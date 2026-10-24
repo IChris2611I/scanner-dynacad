@@ -643,6 +643,21 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   #browseList .browse-card { grid-template-columns: 96px minmax(0, 1fr); }
   #browseList .browse-card .pic { width: 96px; min-height: 114px; }
 }
+/* Accueil épuré : saisie manuelle disponible uniquement à la demande. */
+.manual-toggle {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.manual-row[hidden], .list-search[hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -666,28 +681,19 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       <button class="scan-btn" id="scanToggle">Démarrer le scan</button>
       <button class="torch-btn" id="torchBtn" hidden aria-label="Lampe">🔦</button>
     </div>
-    <div class="manual-row">
-      <input type="text" id="manualEan" placeholder="Ou saisir un EAN manuellement" inputmode="numeric">
+    <button type="button" class="manual-toggle" id="manualToggle" aria-expanded="false" aria-controls="manualRow">⌨️ Saisir un EAN manuellement</button>
+    <div class="manual-row" id="manualRow" hidden>
+      <input type="text" id="manualEan" placeholder="Code EAN" inputmode="numeric" aria-label="Code EAN à ajouter">
       <button id="manualAdd">Ajouter</button>
-    </div>
-
-    <div class="cat-search">
-      <label class="cat-search-label" for="catQuery">Chercher dans le catalogue du magasin (nom, marque, EAN)</label>
-      <div class="cat-search-wrap">
-        <input type="search" id="catQuery" placeholder="Ex : filet mignon, raclette, 3560070…" autocomplete="off" inputmode="search">
-        <button class="cat-clear" id="catClear" aria-label="Effacer">✕</button>
-      </div>
-      <span class="cat-count" id="catCount"></span>
-      <div class="cat-results" id="catResults"></div>
     </div>
 
     <button class="browse-btn" id="openBrowseBtn">📖 Parcourir tout le catalogue</button>
 
-    <p class="hint">Format validé sur Dynacad : EAN + quantité, sans en-tête.<br>Catalogue chargé depuis <code>catalog.json</code> (~14 700 produits du magasin).</p>
+    <p class="hint">Scanne un produit ou retrouve-le dans le catalogue. Exporte ensuite ta commande pour Dynacad.</p>
   </div>
 
   <div class="card">
-    <div class="list-search">
+    <div class="list-search" id="listSearchRow" hidden>
       <input type="search" id="listSearch" placeholder="Filtrer la liste en cours…" autocomplete="off">
     </div>
     <div class="list-header">
@@ -797,7 +803,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   var wakeLock = null;
   var toastTimer = null;
   var currentFilter = '';
-  var browseT = null, catT = null;
+  var browseT = null;
 
   // ---------- Thème ----------
   var THEME_KEY = 'dynacad_theme_v1';
@@ -885,9 +891,7 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
   var imagesReady = false;
 
   async function loadCatalog() {
-    var countEl = document.getElementById('catCount');
-    countEl.textContent = 'Chargement du catalogue…';
-    try {
+     try {
       var res = await fetch('catalog.json', { cache: 'no-cache' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
@@ -895,10 +899,10 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       else if (data && Array.isArray(data.items)) catalog = data.items;
       catalogReady = true;
       precomputeRayons();
-      countEl.textContent = catalog.length.toLocaleString('fr-FR') + ' produits dans le catalogue du magasin.';
+      console.log('Catalogue chargé : ' + catalog.length + ' produits');
     } catch (e) {
       catalogReady = false;
-      countEl.textContent = 'Catalogue indisponible (catalog.json introuvable).';
+      console.warn('Catalogue indisponible');
       console.warn('catalog.json non chargé :', e.message);
     }
   }
@@ -1534,6 +1538,12 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     var countBadge = document.getElementById('countBadge');
     var exportBtn = document.getElementById('exportBtn');
 
+    var listSearchRow = document.getElementById('listSearchRow');
+    listSearchRow.hidden = items.length < 10;
+    if (items.length < 10 && currentFilter) {
+      currentFilter = '';
+      document.getElementById('listSearch').value = '';
+    }
     var filtered = getFilteredItems();
     var pieces = items.reduce(function (s, it) { return s + it.qty; }, 0);
     countBadge.textContent = items.length + (pieces !== items.length ? ' · ' + pieces + ' pcs' : '');
@@ -2137,7 +2147,12 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
       for (var i = items.length - 1; i >= 0; i--) await lookupName(items[i].ean);
     })();
 
-    document.getElementById('manualEan').focus();
+    document.getElementById('manualToggle').addEventListener('click', function () {
+      var row = document.getElementById('manualRow');
+      row.hidden = !row.hidden;
+      this.setAttribute('aria-expanded', String(!row.hidden));
+      if (!row.hidden) document.getElementById('manualEan').focus();
+    });
 
     document.getElementById('scanToggle').addEventListener('click', function () {
       if (scanning) { stopScan(); } else { startScan(); }
@@ -2154,20 +2169,6 @@ input.qty-val:focus { border-color: var(--border-strong); outline: none; }
     document.getElementById('listSearch').addEventListener('input', function () {
       currentFilter = this.value.trim();
       render();
-    });
-
-    var catInput = document.getElementById('catQuery');
-    var catClear = document.getElementById('catClear');
-    catInput.addEventListener('input', function () {
-      catClear.classList.toggle('visible', this.value.length > 0);
-      var cv = this.value; clearTimeout(catT);
-      catT = setTimeout(function () { renderCatalogResults(cv); }, 150);
-    });
-    catClear.addEventListener('click', function () {
-      catInput.value = '';
-      catClear.classList.remove('visible');
-      document.getElementById('catResults').innerHTML = '';
-      catInput.focus();
     });
 
     document.getElementById('openBrowseBtn').addEventListener('click', openBrowseSheet);
